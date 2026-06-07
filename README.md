@@ -1,6 +1,6 @@
 # goexpert-desafio1-clientserver
 
-Sistema cliente/servidor em Go que consulta a cotação USD-BRL, persiste em SQLite e salva o valor em arquivo, respeitando timeouts com `context`.
+Sistema cliente/servidor em Go que consulta cotações de câmbio, persiste em SQLite e salva o valor em arquivo, respeitando timeouts com `context`.
 
 ## Requisitos
 
@@ -23,20 +23,79 @@ Em um terminal:
 go run server.go
 ```
 
-O servidor ficará disponível em `http://localhost:8080/cotacao`.
+O servidor ficará disponível em `http://localhost:8080/cotacao?moeda=<PAR>`.
 
 ### 3. Executar o cliente
 
-Em outro terminal (com o servidor em execução):
+Em outro terminal (com o servidor em execução), informe o par de moedas desejado:
+
+```bash
+go run client.go USD-BRL
+go run client.go BTC-BRL
+go run client.go EUR-USD
+```
+
+É possível consultar praticamente qualquer par suportado pela [AwesomeAPI](https://economia.awesomeapi.com.br) (mais de 150 moedas). O par deve seguir o formato `MOEDA-MOEDA`.
+
+### Exemplos de pares
+
+**Moedas tradicionais**
+
+| Par     | Descrição            |
+|---------|----------------------|
+| USD-BRL | Dólar x Real         |
+| EUR-BRL | Euro x Real          |
+| GBP-BRL | Libra x Real         |
+| JPY-BRL | Iene x Real          |
+| ARS-BRL | Peso Argentino x Real|
+| CAD-BRL | Dólar Canadense x Real |
+| AUD-BRL | Dólar Australiano x Real |
+| CHF-BRL | Franco Suíço x Real  |
+| CNY-BRL | Yuan Chinês x Real   |
+
+**Criptomoedas**
+
+| Par     | Descrição          |
+|---------|--------------------|
+| BTC-BRL | Bitcoin x Real     |
+| ETH-BRL | Ethereum x Real    |
+| LTC-BRL | Litecoin x Real    |
+| XRP-BRL | XRP x Real         |
+
+**Entre moedas estrangeiras**
+
+| Par     | Descrição        |
+|---------|------------------|
+| EUR-USD | Euro x Dólar     |
+| GBP-USD | Libra x Dólar    |
+| USD-JPY | Dólar x Iene     |
+| EUR-GBP | Euro x Libra     |
+
+**Turismo e PTAX (Banco Central)**
+
+| Par         | Descrição              |
+|-------------|------------------------|
+| USD-BRLT    | Dólar Turismo          |
+| EUR-BRLT    | Euro Turismo           |
+| USD-BRLPTAX | PTAX Dólar (BC)        |
+| EUR-BRLPTAX | PTAX Euro (BC)         |
+
+A API também permite consultar várias cotações de uma vez (ex.: `USD-BRL,EUR-BRL,BTC-BRL`), mas neste projeto cada execução do cliente consulta **um par por vez**.
+
+Se o par não for informado, o cliente exibe uma mensagem de erro:
 
 ```bash
 go run client.go
+# informe o par de moedas a ser consultado.
+# uso: go run client.go <PAR>
 ```
 
-O cliente consulta o servidor, extrai o campo `bid` e grava o arquivo `cotacao.txt` no formato:
+O cliente consulta o servidor, extrai o campo `bid` e grava o arquivo `cotacao.txt` usando o nome retornado pela API. Exemplos:
 
 ```
-Dólar: 5.1671
+Dólar Americano/Real Brasileiro: 5.1671
+Bitcoin/Real Brasileiro: 520000.00
+Euro/Dólar Americano: 1.0850
 ```
 
 ## Timeouts

@@ -5,24 +5,29 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
 const (
-	apiURL     = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
+	apiBaseURL = "https://economia.awesomeapi.com.br/json/last/"
 	apiTimeout = 200 * time.Millisecond
 	dbTimeout  = 10 * time.Millisecond
 	serverPort = ":8080"
 	dbPath     = "./data/cotacao.db"
 )
 
-type USDQuote struct {
+var pairFormat = regexp.MustCompile(`^[A-Z0-9]+-[A-Z0-9]+$`)
+
+type Quote struct {
 	Code       string `json:"code"`
 	Codein     string `json:"codein"`
 	Name       string `json:"name"`
@@ -34,10 +39,6 @@ type USDQuote struct {
 	Ask        string `json:"ask"`
 	Timestamp  string `json:"timestamp"`
 	CreateDate string `json:"create_date"`
-}
-
-type apiResponse struct {
-	USDBRL USDQuote `json:"USDBRL"`
 }
 
 func main() {
@@ -56,7 +57,7 @@ func main() {
 	}
 
 	http.HandleFunc("/cotacao", func(w http.ResponseWriter, r *http.Request) {
-		handleCotacao(w, db)
+		handleCotacao(w, r, db)
 	})
 
 	log.Println("servidor rodando na porta 8080")
@@ -69,15 +70,37 @@ func initDB(db *sql.DB) error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS cotacoes (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			par TEXT NOT NULL,
 			bid TEXT NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	_, _ = db.Exec(`ALTER TABLE cotacoes ADD COLUMN par TEXT NOT NULL DEFAULT 'USD-BRL'`)
+	return nil
 }
 
-func handleCotacao(w http.ResponseWriter, db *sql.DB) {
-	quote, err := fetchQuote()
+func validatePair(pair string) error {
+	if pair == "" {
+		return errors.New("informe o par de moedas via query param moeda. Exemplo: /cotacao?moeda=USD-BRL")
+	}
+	if !pairFormat.MatchString(pair) {
+		return fmt.Errorf("formato inválido: %s (use MOEDA-MOEDA, ex: USD-BRL, BTC-BRL, EUR-USD)", pair)
+	}
+	return nil
+}
+
+func handleCotacao(w http.ResponseWriter, r *http.Request, db *sql.DB) {
+	pair := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("moeda")))
+	if err := validatePair(pair); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	quote, err := fetchQuote(pair)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			log.Printf("timeout ao consultar API externa: %v", err)
@@ -86,7 +109,7 @@ func handleCotacao(w http.ResponseWriter, db *sql.DB) {
 		return
 	}
 
-	if err := saveQuote(db, quote.USDBRL.Bid); err != nil {
+	if err := saveQuote(db, pair, quote.Bid); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			log.Printf("timeout ao persistir no banco: %v", err)
 		}
@@ -95,16 +118,16 @@ func handleCotacao(w http.ResponseWriter, db *sql.DB) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(quote.USDBRL); err != nil {
+	if err := json.NewEncoder(w).Encode(quote); err != nil {
 		log.Printf("erro ao enviar resposta: %v", err)
 	}
 }
 
-func fetchQuote() (*apiResponse, error) {
+func fetchQuote(pair string) (*Quote, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), apiTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiBaseURL+pair, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -120,18 +143,24 @@ func fetchQuote() (*apiResponse, error) {
 		return nil, err
 	}
 
-	var quote apiResponse
-	if err := json.Unmarshal(body, &quote); err != nil {
+	var data map[string]Quote
+	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, err
+	}
+
+	key := strings.ReplaceAll(pair, "-", "")
+	quote, ok := data[key]
+	if !ok {
+		return nil, fmt.Errorf("cotação não encontrada para %s", pair)
 	}
 
 	return &quote, nil
 }
 
-func saveQuote(db *sql.DB, bid string) error {
+func saveQuote(db *sql.DB, pair, bid string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
 
-	_, err := db.ExecContext(ctx, "INSERT INTO cotacoes (bid) VALUES (?)", bid)
+	_, err := db.ExecContext(ctx, "INSERT INTO cotacoes (par, bid) VALUES (?, ?)", pair, bid)
 	return err
 }
