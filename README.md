@@ -80,9 +80,7 @@ go run client.go EUR-USD
 | USD-BRLPTAX | PTAX Dólar (BC)        |
 | EUR-BRLPTAX | PTAX Euro (BC)         |
 
-A API também permite consultar várias cotações de uma vez (ex.: `USD-BRL,EUR-BRL,BTC-BRL`), mas neste projeto cada execução do cliente consulta **um par por vez**.
-
-Se o par não for informado, o cliente exibe uma mensagem de erro:
+Se o par não for informado, o cliente exibe uma mensagem de erro.
 
 ```bash
 go run client.go
